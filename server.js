@@ -122,8 +122,9 @@ app.post('/', (req, res) => {
     res.send(JSON.stringify({ value: outputValue }));
 });
 
+// Port Binding Fix for Render
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`Build Logic Render server listening on port ${PORT}`));
+const server = app.listen(PORT, '0.0.0.0', () => console.log(`Build Logic Render server listening on port ${PORT}`));
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));
 process.on('SIGINT', () => server.close(() => process.exit(0)));
