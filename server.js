@@ -1,49 +1,26 @@
 const express = require('express');
 const app = express();
 
+// Body parsers to handle any format Roblox sends
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: '*/*' }));
 
-// Universal CORS configuration
+// Universal CORS headers
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
 
-// Build Logic Text Panel sequence (A to Z) -> [Shift, I5, I4, I3, I2, I1, I0]
+// A-Z Binary Mapping: [Shift, I5, I4, I3, I2, I1, I0]
 const ALPHABET_SEQUENCE = Object.freeze([
-    "1000001", // A
-    "1000010", // B
-    "1000011", // C
-    "1000100", // D
-    "1000101", // E
-    "1000110", // F
-    "1000111", // G
-    "1001000", // H
-    "1001001", // I
-    "1001010", // J
-    "1001011", // K
-    "1001100", // L
-    "1001101", // M
-    "1001110", // N
-    "1001111", // O
-    "1010000", // P
-    "1010001", // Q
-    "1010010", // R
-    "1010011", // S
-    "1010100", // T
-    "1010101", // U
-    "1010110", // V
-    "1010111", // W
-    "1011000", // X
-    "1011001", // Y
-    "1011011"  // Z
+    "1000001", "1000010", "1000011", "1000100", "1000101", "1000110", "1000111",
+    "1001000", "1001001", "1001010", "1001011", "1001100", "1001101", "1001110",
+    "1001111", "1010000", "1010001", "1010010", "1010011", "1010100", "1010101",
+    "1010110", "1010111", "1011000", "1011001", "1011011"
 ]);
 
 const SEQUENCE_MAP = Object.freeze(
@@ -53,50 +30,48 @@ const SEQUENCE_MAP = Object.freeze(
     }, {})
 );
 
+// Health check endpoint
 app.get('/', (req, res) => {
-    res.status(200).send("Build Logic Webhook Server Active");
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).send(JSON.stringify({ status: "active" }));
 });
 
+// Primary POST endpoint
 app.post('/', (req, res) => {
-    let rawValue;
+    res.setHeader('Content-Type', 'application/json');
+
+    let rawValue = null;
 
     if (typeof req.body === 'object' && req.body !== null) {
-        rawValue = req.body.value;
+        rawValue = req.body.value || req.body.data || req.body.input;
     } else if (typeof req.body === 'string') {
         try {
             let parsed = JSON.parse(req.body);
             if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-            rawValue = parsed ? parsed.value : req.body;
+            rawValue = parsed ? (parsed.value || parsed.data || parsed.input) : req.body;
         } catch (e) {
             rawValue = req.body;
         }
     }
 
-    if (rawValue === undefined || rawValue === null) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(400).send(JSON.stringify({ error: "Missing value parameter" }));
-    }
-
-    const inputStr = String(rawValue).trim();
-
+    // Default fallback to letter 'A' signal when payload is empty or invalid
+    let inputStr = rawValue ? String(rawValue).trim() : "10000010";
     if (inputStr.length < 8 || !/^[01]+$/.test(inputStr)) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(400).send(JSON.stringify({ error: "Invalid payload" }));
+        inputStr = "10000010";
     }
 
-    // Extract wire inputs: [I0, I1, I2, I3, I4, I5, SHIFT, Unused]
+    // Unpack bits: [I0, I1, I2, I3, I4, I5, SHIFT, Unused]
     const i0    = inputStr.charAt(0);
     const i1    = inputStr.charAt(1);
     const i2    = inputStr.charAt(2);
     const i3    = inputStr.charAt(3);
     const i4    = inputStr.charAt(4);
     const i5    = inputStr.charAt(5);
-    const shift = inputStr.charAt(6); // 7th bit
-    const bit8  = inputStr.charAt(7); // 8th unused bit
+    const shift = inputStr.charAt(6);
+    const bit8  = inputStr.charAt(7);
 
-    // Convert to standard binary: [SHIFT, I5, I4, I3, I2, I1, I0]
+    // Reconstruct standard binary key: [SHIFT, I5, I4, I3, I2, I1, I0]
     const currentStdBinary = `${shift}${i5}${i4}${i3}${i2}${i1}${i0}`;
-
     const currentIndex = SEQUENCE_MAP[currentStdBinary];
 
     let nextIndex = 0;
@@ -105,7 +80,6 @@ app.post('/', (req, res) => {
     }
 
     const nextStdBits = ALPHABET_SEQUENCE[nextIndex];
-
     const nextShift = nextStdBits.charAt(0);
     const nextI5    = nextStdBits.charAt(1);
     const nextI4    = nextStdBits.charAt(2);
@@ -114,17 +88,13 @@ app.post('/', (req, res) => {
     const nextI1    = nextStdBits.charAt(5);
     const nextI0    = nextStdBits.charAt(6);
 
-    // Reconstruct output in wire order: [I0, I1, I2, I3, I4, I5, SHIFT, Unused]
+    // Pack output wire format: [I0, I1, I2, I3, I4, I5, SHIFT, Unused]
     const outputValue = `${nextI0}${nextI1}${nextI2}${nextI3}${nextI4}${nextI5}${nextShift}${bit8}`;
 
-    // Force strict minified JSON response
-    res.setHeader('Content-Type', 'application/json');
-    res.send(JSON.stringify({ value: outputValue }));
+    // Minified JSON output guaranteed
+    return res.status(200).send(JSON.stringify({ value: outputValue }));
 });
 
-// Port Binding Fix for Render
-const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, '0.0.0.0', () => console.log(`Build Logic Render server listening on port ${PORT}`));
-
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
-process.on('SIGINT', () => server.close(() => process.exit(0)));
+// Render Port Binding Fix
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => console.log(`Server live on port ${PORT}`));
